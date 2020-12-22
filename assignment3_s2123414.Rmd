@@ -1,0 +1,325 @@
+---
+title: "IDA_Assignment3"
+author: "philippe mantke"
+date: "12/20/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r, setup}
+require(mice)
+library(knitr)
+
+load("dataex2.Rdata")
+load("dataex4.Rdata")
+```
+## Question 1
+
+### 1a
+
+```{r 1a, cache= TRUE}
+# What percentage of the cases is incomplete? 
+str(nhanes)
+summary(nhanes)
+
+mdpat_mice = md.pattern(nhanes) 
+# from the missing data pattern we can see: 
+nrow(ic(nhanes))/nrow(nhanes)
+```
+### 1b
+
+```{r 1b, cache= TRUE}
+imps = mice(nhanes, printFlag = FALSE, seed = 1)
+
+fits = with(imps, lm(bmi ~ hyp + age + chl))
+
+ests = pool(fits)
+summary(ests, conf.int = TRUE)[, c(2, 3, 6, 7, 8)]
+
+#What are the proportions of variance due to the missing data for each parameters
+terms = ests$pooled$term
+lambda = ests$pooled$lambda
+terms
+lambda
+#Which parameters appear to be most affected by the nonresponse?
+
+```
+The column corresponding to lambda is the proportion of variance in the parameter of interest due to the missing values. This is given by $(B + B/M)/(V^{T})$. We can conclude that age seems to be most affected by missing data.
+
+### 1c
+
+```{r 1c, cache= TRUE}
+ests_seed2 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 2), 
+                        lm(bmi ~ hyp + age + chl)))
+ests_seed3 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 3), 
+                        lm(bmi ~ hyp + age + chl)))
+ests_seed4 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 4), 
+                        lm(bmi ~ hyp + age + chl)))
+ests_seed5 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 5), 
+                        lm(bmi ~ hyp + age + chl)))
+ests_seed6 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 6), 
+                        lm(bmi ~ hyp + age + chl)))
+
+print(ests_seed2$pooled$lambda)
+print(ests_seed3$pooled$lambda)
+print(ests_seed4$pooled$lambda)
+print(ests_seed5$pooled$lambda)
+print(ests_seed6$pooled$lambda)
+
+```
+We can see that the proportion changes from seed to seed. For example with seed 1 in part b) we had found that age had the highest value at 0.68640637 but with seed 4 we find the value for age to be 0.2189333. At seed for the highest observed value is for chl at 0.3305334. 
+
+### 1d
+
+```{r 1d, cache= TRUE}
+ests_seed1_100 = pool(with(mice(nhanes, printFlag = FALSE, seed = 1, m = 100), 
+                           lm(bmi ~ hyp + age + chl)))
+ests_seed2_100 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 2, m = 100), 
+                            lm(bmi ~ hyp + age + chl)))
+ests_seed3_100 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 3, m = 100), 
+                            lm(bmi ~ hyp + age + chl)))
+ests_seed4_100 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 4, m = 100), 
+                            lm(bmi ~ hyp + age + chl)))
+ests_seed5_100 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 5, m = 100), 
+                            lm(bmi ~ hyp + age + chl)))
+ests_seed6_100 <- pool(with(mice(nhanes, printFlag = FALSE, seed = 6, m = 100), 
+                            lm(bmi ~ hyp + age + chl)))
+
+print("(Intercept) hyp         age         chl")
+print(ests_seed1_100$pooled$lambda)
+print(ests_seed2_100$pooled$lambda)
+print(ests_seed3_100$pooled$lambda)
+print(ests_seed4_100$pooled$lambda)
+print(ests_seed5_100$pooled$lambda)
+print(ests_seed6_100$pooled$lambda)
+```
+The ordering from highest to lowest seems to stabilize with the most frequent order observed in seed 1,2,4,6 is Age, chl, hyp and Intercept.
+However we have a higher computational effort with higher M (number of multiple imputations) which is to be expected. So in conclusion while the computational effort is higher, it is still very managable and the computation takes only seconds, so I would choose M = 100 as it delivers more consistent results. 
+
+## Question 2
+
+```{r 2, cache= TRUE}
+B1 = 3
+count_normb = 0
+count_normn = 0
+i = 1
+for (i in 1:100){
+  #proper
+  imps_normb <- mice(dataex2[,,i], method = "norm.boot", printFlag = FALSE, seed = 1, m=20)
+  ests_normb = pool(with(imps_normb, lm( Y ~ X)))
+
+  LB = summary(ests_normb, conf.int = TRUE)[,7][2]
+  UB = summary(ests_normb, conf.int = TRUE)[,8][2]
+
+  if (B1 > LB & B1 < UB){
+    count_normb = count_normb + 1
+  }
+  
+  
+  #improper
+  imps_normn <- mice(dataex2[,,i], method = "norm.nob", printFlag = FALSE, seed = 1, m=20)
+  ests_normn = pool(with(imps_normn, lm( Y ~ X)))
+
+  LB = summary(ests_normn, conf.int = TRUE)[,7][2]
+  UB = summary(ests_normn, conf.int = TRUE)[,8][2]
+
+  if (B1 > LB & B1 < UB){
+    count_normn = count_normn + 1
+  }
+}
+
+
+df_coverage = data.frame("coverage" = c(count_normb/100, count_normn/100))
+rownames(df_coverage) = c("bootstrap","SR")
+kable(df_coverage, escape = FALSE, caption = "empirical coverage probability of the 95% CI for beta1")
+```
+
+We observe that the bootstrap approach provides a much higher coverage than the stochastic regression imputation, due to the fact that bootstrapping takes into account the parameter uncertainty, which is referred to as proper multiple imputation, whereas SR ignores the parameter uncertainty (improper multiple imputation). 
+
+## Question 3
+
+According to rubins rule the multiple imputation estimate of $\theta$, $\hat{\theta}^{_{IM}}$, is given by,
+
+\begin{align*}
+\hat{\theta}^{_{IM}} = \frac{1}{M}\sum_{m=1}^{M}\hat{\theta}^{_{(m)}} \ \ \ \ \text{(1)}
+\end{align*} 
+
+where we have, 
+
+
+\begin{align*}
+\hat{\theta}^{_{(m)}} = \hat{\beta}_{0}^{(m)} + \sum_{i=1}^{n} x_{i} \hat{\beta}_{i}^{(m)} + z \text{ where } z \overset{\text{iid}}{\sim} \text{N}\left(0, \sigma^2 \right) \ \ \ \ \text{(2)}
+\end{align*}
+
+Plugging equation (2) in equation (1) we get, 
+
+
+
+\begin{align*}
+\hat{\theta}^{_{IM}} = \frac{1}{M}\sum_{m=1}^{M}\hat{\theta}^{_{(m)}} &= 
+\frac{1}{M} \sum_{m=1}^M \hat{\beta}_{0}^{(m)} + \frac{1}{M}\sum_{m=1}^M\sum_{i=1}^{n} x_{i} \hat{\beta}_{i}^{(m)} + \frac{1}{M}\sum_{m=1}^Mz^{(m)} \\
+&= \frac{1}{M} \sum_{m=1}^M \hat{\beta}_{0}^{(m)} + \sum_{i=1}^{n}x_{i}\frac{1}{M}\sum_{m=1}^M  \hat{\beta}_{i}^{(m)} + \frac{1}{M}\sum_{m=1}^Mz^{(m)}\ \ \ \ \text{(3)}
+\end{align*}
+
+where the equation (3) is pooling the regression coefficients from each fitted model in step 2 using Rubin’s rule for point estimates and then computing the predicted values afterwards. Thus we have shown that the strategies (i) and (ii) coincide. 
+
+
+## Question 4
+```{r}
+load("dataex4.Rdata")
+```
+
+
+```{r 4a}
+imp <- mice(dataex4, seed = 1, m = 50, printFlag = FALSE)
+
+
+fit <- with(imp, lm(y ~ x1 + x2 + x1*x2))
+
+ests <- pool(fit)
+
+param = summary(ests, conf.int = TRUE)[, c(2, 7, 8)]
+rownames(param) = c("beta0", "beta1", "beta2", "beta3")
+param
+```
+
+We see that only beta 2 is contained in the confidence interval. All other CIs do not contain the real value of the coefficients.
+
+```{r 4b, cache= TRUE}
+library(dplyr) 
+dataex4_int = dataex4 %>% 
+  mutate(int = x1 * x2)
+
+# passive imputation as observed in W10 R example: 
+# makes sure the interaction term is calculated from the imputed x1 and x2 
+# at each iteration
+imp_b <- mice(dataex4_int, maxit = 0)
+meth_b = imp_b$method
+meth_b["int"] = "~I(x1*x2)"
+meth_b
+
+# the following prevents the interaction term of acting as a predictor of x1 and x2 
+# in the prediction model
+pred_b = imp_b$predictorMatrix
+pred_b[c("x1", "x2"), "int"] = 0
+
+# note that since we do not have other variables we do not need to exclude x1 and x2 as 
+# predictors
+ests_b = pool(with(mice(dataex4_int, method = meth_b, predictorMatrix = pred_b, 
+                      seed = 1, m = 50, printFlag = FALSE),
+                      lm(y ~ x1 + x2 + int)))
+
+param_b = summary(ests_b, conf.int = TRUE)[, c(2, 7, 8)]
+rownames(param_b) = c("beta0", "beta1", "beta2", "beta3")
+param_b
+```
+
+Again beta3 and beta1 are not in the 95% confidence interval. While the values are closer than than for part a. 
+
+```{r 4c}
+imp_c = mice(dataex4_int, seed = 1, m = 50, printFlag = FALSE)
+pred_c = imp_c$predictorMatrix
+fit_int <- with(imp_c, lm(y ~ x1 + x2 + int))
+
+ests_int <- pool(fit_int)
+param_c = summary(ests_int, conf.int = TRUE)[, c(2, 7, 8)]
+rownames(param_c) = c("beta0", "beta1", "beta2", "beta3")
+param_c
+```
+
+Finally all the CIs contain the real value of the coefficient and the estimates are all very close to the original value. This makes just another variable the most effective method of imputation. 
+
+```{r 4d}
+meth_c = imp_c$method
+meth_c
+pred_c = imp_c$predictorMatrix
+pred_c
+```
+As can be seen above int is imputed as a linear combination of y, x1 and x2 which would clearly allow it to not equal the multiplication of x1 and x2, which would then not make it the interaction term of x1 and x2 which by definition is x1x2. It is interesting that with this conceptual drawback it is the method that performs the best (why?). 
+
+## Question 5
+
+```{r, cache=TRUE}
+load("NHANES2.Rdata")
+str(NHANES2)
+summary(NHANES2)
+
+require(JointAI)
+md_pattern(NHANES2, pattern = FALSE, c('#34111b', '#e30f41'))
+
+```
+From the plot above, we can see that there are 411 fully observed data points, i.e. with no missing data in any of the 12 variables. In total, we have 500 observations, so there are 89 data points with missing data, or 17.8%.
+
+```{r, cache=TRUE}
+par(mar = c(3, 3, 2, 1), mgp = c(2, 0.6, 0))
+plot_all(NHANES2, breaks = 10, ncol = 4)
+```
+We can notice that a lot of our continuous variables are skewed to some extent. In particular, the variables weight, bili, chol, HDL, SBP and WC are all skewed to the right. As a result, predictive mean matching is the most appropriate method.
+
+
+```{r, cache=TRUE}
+
+imp0 = mice(data = NHANES2, maxit = 0)
+imp0$method
+imp0$predictorMatrix
+
+```
+
+There are no derived variables in our dataset. In our categorical variables that do have some missing data, we can notice that the imputation method is appropriate as it takes their nature into account, i.e. it does not use pmm.
+
+We will use maxit = 20 and m = 20 as it allows more precise estimates.
+
+```{r, cache=TRUE}
+
+imp_ex5 <- mice(NHANES2, maxit = 20, m = 20, seed = 1, printFlag = FALSE)
+
+imp_ex5$loggedEvents
+
+```
+There have not been any problems during the imputation
+
+```{r, cache=TRUE}
+plot(imp_ex5, layout = c(4,4))
+```
+
+The data seems to be mixing fairly well, and we do not have any problems with convergence.
+
+```{r, cache=TRUE}
+
+densityplot(imp_ex5)
+
+```
+
+There seems to be some problems with hgt. However, there are only 11 missing values for hgt out of 500 data points so it is not too alarming that there is discrepancy between our imputed values and the observed ones. It would be interesting to understand why.
+
+Having now confirmed that our imputation step was successful, let's proceed to our analysis (step 2).
+
+```{r, cache=TRUE}
+
+pred_ex5 = with(imp_ex5, lm(wgt ~ gender + age + hgt + WC))
+
+ests_ex5 = pool(pred_ex5)
+ests_ex5
+
+t = summary(ests_ex5, conf.int = TRUE)
+t
+
+```
+
+
+```{r, cache=TRUE}
+
+df <- data.frame("Estimate" = t[,2], "LB" = t[,7], "UB" = t[,8])
+rownames(df) <- c("$\\beta_0$", "$\\beta_1$","$\\beta_2$", "$\\beta_3$", "$\\beta_4$")
+colnames(df) <- c("Estimate", "2.5% quantile", "97.5% quantile")
+knitr::kable(df, escape = FALSE, digits = 3,
+caption = "Regression coefficient estimates and corresponding 95% CI")
+
+```
+
+We should try different seeds. Given the amount of missing data, we should use a larger M, perhaps 50 or 100. Because we have a lot of data, this would take a considerable amount of time. 
+
+
+
+
